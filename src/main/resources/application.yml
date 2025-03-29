@@ -1,0 +1,18 @@
+server:
+  port: 18080
+
+spring:
+  application:
+    name: manus4j
+  ai:
+    openai:
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
+      api-key: sk-eff76ff3338e4dcd955907790d49116a
+      chat:
+        options:
+          model: qwen-max-latest
+    mcp:
+      client:
+        request-timeout: 60000
+        stdio:
+          servers-configuration: classpath:/mcp-servers-config.json

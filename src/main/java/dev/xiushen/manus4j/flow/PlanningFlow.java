@@ -15,19 +15,22 @@
  */
 package dev.xiushen.manus4j.flow;
 
-import com.google.gson.Gson;
+import com.google.common.cache.Cache;
 import dev.xiushen.manus4j.agent.BaseAgent;
-import dev.xiushen.manus4j.llm.LlmService;
-import dev.xiushen.manus4j.tool.PlanningTool;
-import dev.xiushen.manus4j.tool.support.ToolExecuteResult;
+import dev.xiushen.manus4j.common.CommonCache;
+import dev.xiushen.manus4j.enums.StepStatus;
+import dev.xiushen.manus4j.utils.CommonUtils;
+import dev.xiushen.manus4j.utils.PlanningUtils;
+import jakarta.annotation.Resource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,48 +41,34 @@ public class PlanningFlow extends BaseFlow {
 
 	private static final Logger log = LoggerFactory.getLogger(PlanningFlow.class);
 
-	private final PlanningTool planningTool;
+	private static final Cache<String, Map<String, Object>> planningCache = CommonCache.planningCache;
 
-	private List<String> executorKeys;
+	@Resource
+	private ChatClient planningChatClient;
+	@Resource
+	private ChatClient finalizeChatClient;
 
 	private String activePlanId;
-
+	private List<String> executorKeys;
 	private Integer currentStepIndex;
-
-	@Autowired
-	private LlmService llmService;
-
-	// shared result state between agents.
-	private Map<String, Object> resultState;
 
 	public PlanningFlow(Map<String, BaseAgent> agents, Map<String, Object> data) {
 		super(agents, data);
 
-		executorKeys = new ArrayList<>();
-
+		this.executorKeys = new ArrayList<>();
 		if (data.containsKey("executors")) {
-			this.executorKeys = (List<String>) data.remove("executors");
+			this.executorKeys = CommonUtils.convertWithStream(data.remove("executors"));
 		}
 
 		if (data.containsKey("plan_id")) {
-			activePlanId = (String) data.remove("plan_id");
-		}
-		else {
-			activePlanId = "plan_" + System.currentTimeMillis();
-		}
-
-		if (!data.containsKey("planning_tool")) {
-			this.planningTool = PlanningTool.INSTANCE;
-		}
-		else {
-			this.planningTool = (PlanningTool) data.get("planning_tool");
+			this.activePlanId = (String) data.remove("plan_id");
+		} else {
+			this.activePlanId = "plan_" + System.currentTimeMillis();
 		}
 
-		if (executorKeys.isEmpty()) {
-			executorKeys.addAll(agents.keySet());
+		if (this.executorKeys.isEmpty()) {
+			this.executorKeys.addAll(agents.keySet());
 		}
-
-		this.resultState = new HashMap<>();
 	}
 
 	public BaseAgent getExecutor(String stepType) {
@@ -100,9 +89,8 @@ public class PlanningFlow extends BaseFlow {
 		try {
 			if (inputText != null && !inputText.isEmpty()) {
 				createInitialPlan(inputText);
-
-				if (!planningTool.getPlans().containsKey(activePlanId)) {
-					log.error("Plan creation failed. Plan ID " + activePlanId + " not found in planning tool.");
+				if (!planningCache.asMap().containsKey(activePlanId)) {
+                    log.error("Plan creation failed. Plan ID {} not found in planning tool.", activePlanId);
 					return "Failed to create plan for: " + inputText;
 				}
 			}
@@ -127,19 +115,17 @@ public class PlanningFlow extends BaseFlow {
 				executor.setConversationId(activePlanId);
 				String stepResult = executeStep(executor, stepInfo);
 				result.append(stepResult).append("\n");
-
 			}
 
 			return result.toString();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			log.error("Error in PlanningFlow", e);
 			return "Execution failed: " + e.getMessage();
 		}
 	}
 
 	public void createInitialPlan(String request) {
-		log.info("Creating initial plan with ID: " + activePlanId);
+        log.info("Creating initial plan with ID: {}", activePlanId);
 
 		String prompt_template = """
 				Create a reasonable plan with clear steps to accomplish the task:
@@ -151,95 +137,70 @@ public class PlanningFlow extends BaseFlow {
 
 		PromptTemplate promptTemplate = new PromptTemplate(prompt_template);
 		Prompt userPrompt = promptTemplate.create(Map.of("plan_id", activePlanId, "query", request));
-		ChatResponse response = llmService.getPlanningChatClient()
+		ChatResponse response = planningChatClient
 			.prompt(userPrompt)
-			.advisors(memoryAdvisor -> memoryAdvisor.param(CHAT_MEMORY_CONVERSATION_ID_KEY, getConversationId())
+			.advisors(memoryAdvisor -> memoryAdvisor.param(CHAT_MEMORY_CONVERSATION_ID_KEY, activePlanId)
 				.param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 100))
 			.user(request)
 			.call()
 			.chatResponse();
 
 		if (response != null && response.getResult() != null) {
-			log.info("Plan creation result: " + response.getResult().getOutput().getText());
-		}
-		else {
+            log.info("Plan creation result: {}", response.getResult().getOutput().getText());
+		} else {
 			log.warn("Creating default plan");
-
 			Map<String, Object> defaultArgumentMap = new HashMap<>();
-			defaultArgumentMap.put("command", "create");
 			defaultArgumentMap.put("plan_id", activePlanId);
 			defaultArgumentMap.put("title", "Plan for: " + request.substring(0, Math.min(request.length(), 50))
 					+ (request.length() > 50 ? "..." : ""));
-			defaultArgumentMap.put("steps", Arrays.asList("Analyze request", "Execute task", "Verify results"));
-			planningTool.run(new Gson().toJson(defaultArgumentMap));
+
+			List<String> steps = Arrays.asList("Analyze request", "Execute task", "Verify results");
+			defaultArgumentMap.put("steps", steps);
+			defaultArgumentMap.put("step_statuses", new ArrayList<>(Collections.nCopies(steps.size(), "not_started")));
+			defaultArgumentMap.put("step_notes", new ArrayList<>(Collections.nCopies(steps.size(), "")));
+			planningCache.put(activePlanId, defaultArgumentMap);
 		}
 	}
 
 	public Map.Entry<Integer, Map<String, String>> getCurrentStepInfo() {
-		if (activePlanId == null || !planningTool.getPlans().containsKey(activePlanId)) {
-			log.error("Plan with ID " + activePlanId + " not found");
+		if (activePlanId == null || !planningCache.asMap().containsKey(activePlanId)) {
+            log.error("Plan with ID {} not found", activePlanId);
 			return null;
 		}
 
 		try {
-			Map<String, Object> planData = planningTool.getPlans().get(activePlanId);
-			List<String> steps = (List<String>) planData.getOrDefault("steps", new ArrayList<String>());
-			List<String> stepStatuses = (List<String>) planData.getOrDefault("step_statuses", new ArrayList<String>());
+			Map<String, Object> planData = planningCache.get(activePlanId, ConcurrentHashMap::new);
+			List<String> steps = CommonUtils.convertWithStream(planData.getOrDefault("steps", new ArrayList<String>()));
+			List<String> stepStatuses = CommonUtils.convertWithStream(planData.getOrDefault("step_statuses", new ArrayList<String>()));
 
 			for (int i = 0; i < steps.size(); i++) {
 				String status;
 				if (i >= stepStatuses.size()) {
-					status = PlanStepStatus.NOT_STARTED.getValue();
-				}
-				else {
+					status = StepStatus.NOT_STARTED.getValue();
+				} else {
 					status = stepStatuses.get(i);
 				}
 
-				if (PlanStepStatus.getActiveStatuses().contains(status)) {
+				if (StepStatus.getActiveStatuses().contains(status)) {
 					Map<String, String> stepInfo = new HashMap<>();
 					stepInfo.put("text", steps.get(i));
 
-					Pattern pattern = Pattern.compile("\\[([A-Z_]+)\\]");
+					Pattern pattern = Pattern.compile("\\[([A-Z_]+)]");
 					Matcher matcher = pattern.matcher(steps.get(i));
 					if (matcher.find()) {
 						stepInfo.put("type", matcher.group(1).toLowerCase());
 					}
 
-					try {
-						final int index = i;
-						Map<String, Object> argsMap = new HashMap<String, Object>() {
-							{
-								put("command", "mark_step");
-								put("plan_id", activePlanId);
-								put("step_index", index);
-								put("step_status", PlanStepStatus.IN_PROGRESS.getValue());
-							}
-						};
-						planningTool.run(new Gson().toJson(argsMap));
-					}
-					catch (Exception e) {
-						log.error("Error marking step as in_progress", e);
-						if (i < stepStatuses.size()) {
-							stepStatuses.set(i, PlanStepStatus.IN_PROGRESS.getValue());
-						}
-						else {
-							while (stepStatuses.size() < i) {
-								stepStatuses.add(PlanStepStatus.NOT_STARTED.getValue());
-							}
-							stepStatuses.add(PlanStepStatus.IN_PROGRESS.getValue());
-						}
-						planData.put("step_statuses", stepStatuses);
-					}
-
+					stepStatuses.set(i, StepStatus.IN_PROGRESS.getValue());
+					planData.put("step_statuses", stepStatuses);
+					planningCache.put(activePlanId, planData);
 					return new AbstractMap.SimpleEntry<>(i, stepInfo);
 				}
 			}
 
 			return null;
-
-		}
-		catch (Exception e) {
-			log.error("Error finding current step index: " + e.getMessage());
+		} catch (Exception e) {
+            log.error("Error finding current step index: {}", e.getMessage());
 			return null;
 		}
 	}
@@ -250,101 +211,65 @@ public class PlanningFlow extends BaseFlow {
 			String stepText = stepInfo.getOrDefault("text", "Step " + currentStepIndex);
 
 			try {
+				String stepResult = executor.run(Map.of("planStatus", planStatus, "currentStepIndex", currentStepIndex, "stepText", stepText));
+				if (Objects.nonNull(currentStepIndex)) {
+					Map<String, Map<String, Object>> plans = planningCache.asMap();
+					if (plans.containsKey(activePlanId)) {
+						Map<String, Object> planData = plans.get(activePlanId);
+						List<String> stepStatuses = CommonUtils.convertWithStream(planData.get("step_statuses"));
 
-				String stepResult = executor
-					.run(Map.of("planStatus", planStatus, "currentStepIndex", currentStepIndex, "stepText", stepText));
+						while (stepStatuses.size() <= currentStepIndex) {
+							stepStatuses.add(StepStatus.NOT_STARTED.getValue());
+						}
 
-				markStepCompleted();
+						stepStatuses.set(currentStepIndex, StepStatus.COMPLETED.getValue());
+						planData.put("step_statuses", stepStatuses);
+						planningCache.put(activePlanId, planData);
+					}
+				}
 
 				return stepResult;
-			}
-			catch (Exception e) {
-				log.error("Error executing step " + currentStepIndex + ": " + e.getMessage());
+			} catch (Exception e) {
+                log.error("Error executing step {}: {}", currentStepIndex, e.getMessage());
 				return "Error executing step " + currentStepIndex + ": " + e.getMessage();
 			}
-		}
-		catch (Exception e) {
-			log.error("Error preparing execution context: " + e.getMessage());
+		} catch (Exception e) {
+            log.error("Error preparing execution context: {}", e.getMessage());
 			return "Error preparing execution context: " + e.getMessage();
-		}
-	}
-
-	public void markStepCompleted() {
-		if (currentStepIndex == null) {
-			return;
-		}
-
-		try {
-			Map<String, Object> argsMap = new HashMap<String, Object>() {
-				{
-					put("command", "mark_step");
-					put("plan_id", activePlanId);
-					put("step_index", currentStepIndex);
-					put("step_status", PlanStepStatus.COMPLETED.getValue());
-				}
-			};
-			ToolExecuteResult result = planningTool.run(new Gson().toJson(argsMap));
-			log.info("Marked step " + currentStepIndex + " as completed in plan " + activePlanId);
-		}
-		catch (Exception e) {
-			log.error("Failed to update plan status: " + e.getMessage());
-
-			Map<String, Map<String, Object>> plans = planningTool.getPlans();
-			if (plans.containsKey(activePlanId)) {
-				Map<String, Object> planData = plans.get(activePlanId);
-				List<String> stepStatuses = (List<String>) planData.getOrDefault("step_statuses",
-						new ArrayList<String>());
-
-				while (stepStatuses.size() <= currentStepIndex) {
-					stepStatuses.add(PlanStepStatus.NOT_STARTED.getValue());
-				}
-
-				stepStatuses.set(currentStepIndex, PlanStepStatus.COMPLETED.getValue());
-				planData.put("step_statuses", stepStatuses);
-			}
 		}
 	}
 
 	public String getPlanText() {
 		try {
-			Map<String, Object> argsMap = new HashMap<String, Object>() {
-				{
-					put("command", "get");
-					put("plan_id", activePlanId);
-				}
-			};
-			ToolExecuteResult result = planningTool.run(new Gson().toJson(argsMap));
-
-			return result.getOutput() != null ? result.getOutput() : result.toString();
-		}
-		catch (Exception e) {
-			log.error("Error getting plan: " + e.getMessage());
+			return PlanningUtils.formatPlan(planningCache.get(activePlanId, ConcurrentHashMap::new));
+		} catch (Exception e) {
+            log.error("Error getting plan: {}", e.getMessage());
 			return generatePlanTextFromStorage();
 		}
 	}
 
 	public String generatePlanTextFromStorage() {
 		try {
-			Map<String, Map<String, Object>> plans = planningTool.getPlans();
+			Map<String, Map<String, Object>> plans = planningCache.asMap();
 			if (!plans.containsKey(activePlanId)) {
 				return "Error: Plan with ID " + activePlanId + " not found";
 			}
 
 			Map<String, Object> planData = plans.get(activePlanId);
 			String title = (String) planData.getOrDefault("title", "Untitled Plan");
-			List<String> steps = (List<String>) planData.getOrDefault("steps", new ArrayList<String>());
-			List<String> stepStatuses = (List<String>) planData.getOrDefault("step_statuses", new ArrayList<String>());
-			List<String> stepNotes = (List<String>) planData.getOrDefault("step_notes", new ArrayList<String>());
+			List<String> steps = CommonUtils.convertWithStream(planData.getOrDefault("steps", new ArrayList<String>()));
+			List<String> stepStatuses = CommonUtils.convertWithStream(planData.getOrDefault("step_statuses", new ArrayList<String>()));
+			List<String> stepNotes = CommonUtils.convertWithStream(planData.getOrDefault("step_notes", new ArrayList<String>()));
 
 			while (stepStatuses.size() < steps.size()) {
-				stepStatuses.add(PlanStepStatus.NOT_STARTED.getValue());
+				stepStatuses.add(StepStatus.NOT_STARTED.getValue());
 			}
 			while (stepNotes.size() < steps.size()) {
 				stepNotes.add("");
 			}
 
 			Map<String, Integer> statusCounts = new HashMap<>();
-			for (String status : PlanStepStatus.getAllStatuses()) {
+			for (String status : StepStatus.getAllStatuses()) {
 				statusCounts.put(status, 0);
 			}
 
@@ -352,7 +277,7 @@ public class PlanningFlow extends BaseFlow {
 				statusCounts.put(status, statusCounts.getOrDefault(status, 0) + 1);
 			}
 
-			int completed = statusCounts.get(PlanStepStatus.COMPLETED.getValue());
+			int completed = statusCounts.get(StepStatus.COMPLETED.getValue());
 			int total = steps.size();
 			double progress = total > 0 ? (completed / (double) total) * 100 : 0;
 
@@ -364,21 +289,21 @@ public class PlanningFlow extends BaseFlow {
 
 			planText.append(String.format("Progress: %d/%d steps completed (%.1f%%)\n", completed, total, progress));
 			planText.append(String.format("Status: %d completed, %d in progress, ",
-					statusCounts.get(PlanStepStatus.COMPLETED.getValue()),
-					statusCounts.get(PlanStepStatus.IN_PROGRESS.getValue())));
+					statusCounts.get(StepStatus.COMPLETED.getValue()),
+					statusCounts.get(StepStatus.IN_PROGRESS.getValue())));
 			planText.append(
-					String.format("%d blocked, %d not started\n\n", statusCounts.get(PlanStepStatus.BLOCKED.getValue()),
-							statusCounts.get(PlanStepStatus.NOT_STARTED.getValue())));
+					String.format("%d blocked, %d not started\n\n", statusCounts.get(StepStatus.BLOCKED.getValue()),
+							statusCounts.get(StepStatus.NOT_STARTED.getValue())));
 			planText.append("Steps:\n");
 
-			Map<String, String> statusMarks = PlanStepStatus.getStatusMarks();
+			Map<String, String> statusMarks = StepStatus.getStatusMarks();
 
 			for (int i = 0; i < steps.size(); i++) {
 				String step = steps.get(i);
 				String status = stepStatuses.get(i);
 				String notes = stepNotes.get(i);
 				String statusMark = statusMarks.getOrDefault(status,
-						statusMarks.get(PlanStepStatus.NOT_STARTED.getValue()));
+						statusMarks.get(StepStatus.NOT_STARTED.getValue()));
 
 				planText.append(String.format("%d. %s %s\n", i, statusMark, step));
 				if (!notes.isEmpty()) {
@@ -387,9 +312,8 @@ public class PlanningFlow extends BaseFlow {
 			}
 
 			return planText.toString();
-		}
-		catch (Exception e) {
-			log.error("Error generating plan text from storage: " + e.getMessage());
+		} catch (Exception e) {
+            log.error("Error generating plan text from storage: {}", e.getMessage());
 			return "Error: Unable to retrieve plan with ID " + activePlanId;
 		}
 	}
@@ -400,21 +324,17 @@ public class PlanningFlow extends BaseFlow {
 			String prompt = "The plan has been completed. Here is the final plan status:\n\n" + planText
 					+ "\n\nPlease provide a summary of what was accomplished and any final thoughts.";
 
-			ChatResponse response = llmService.getFinalizeChatClient().prompt().user(prompt).call().chatResponse();
-			return "Plan completed:\n\n" + response.getResult().getOutput().getText();
+			ChatResponse response = finalizeChatClient.prompt().user(prompt).call().chatResponse();
+            if (response != null) {
+                return "Plan completed:\n\n" + response.getResult().getOutput().getText();
+            }
+        } catch (Exception e) {
+            log.error("Error finalizing plan with LLM: {}", e.getMessage());
 		}
-		catch (Exception e) {
-			log.error("Error finalizing plan with LLM: " + e.getMessage());
-			return "Plan completed. Error generating summary.";
-		}
+		return "Plan completed. Error generating summary.";
 	}
 
 	public void setActivePlanId(String activePlanId) {
 		this.activePlanId = activePlanId;
 	}
-
-	public String getConversationId() {
-		return activePlanId;
-	}
-
 }

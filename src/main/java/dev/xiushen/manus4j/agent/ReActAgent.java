@@ -15,13 +15,7 @@
  */
 package dev.xiushen.manus4j.agent;
 
-import dev.xiushen.manus4j.llm.LlmService;
-
 public abstract class ReActAgent extends BaseAgent {
-
-	public ReActAgent(LlmService llmService) {
-		super(llmService);
-	}
 
 	protected abstract boolean think();
 

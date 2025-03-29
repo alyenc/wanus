@@ -21,19 +21,19 @@ public class ExecuteCommandResult {
 
 	private Integer exitCode;
 
-	String getOutput() {
+	public String getOutput() {
 		return output;
 	}
 
-	void setOutput(String output) {
+	public void setOutput(String output) {
 		this.output = output;
 	}
 
-	Integer getExitCode() {
+	public Integer getExitCode() {
 		return exitCode;
 	}
 
-	void setExitCode(Integer exitCode) {
+	public void setExitCode(Integer exitCode) {
 		this.exitCode = exitCode;
 	}
 

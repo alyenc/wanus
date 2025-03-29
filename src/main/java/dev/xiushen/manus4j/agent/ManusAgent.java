@@ -15,22 +15,21 @@
  */
 package dev.xiushen.manus4j.agent;
 
-import dev.xiushen.manus4j.llm.LlmService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.tool.ToolCallbackProvider;
 
 public class ManusAgent extends ToolCallAgent {
-
-	private static final Logger log = LoggerFactory.getLogger(ManusAgent.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(ManusAgent.class);
 
 	private String name = "Manus";
-
 	private String description = "A versatile agent that can solve various tasks using multiple tools";
 
-	public ManusAgent(LlmService llmService, ToolCallingManager toolCallingManager) {
-		super(llmService, toolCallingManager);
-	}
+	public ManusAgent(ChatClient chatClient, ToolCallbackProvider manusToolCallbackProvider, ToolCallingManager toolCallingManager) {
+        super(chatClient, manusToolCallbackProvider, toolCallingManager);
+    }
 
 	@Override
 	public String getName() {

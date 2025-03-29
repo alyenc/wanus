@@ -15,7 +15,9 @@
  */
 package dev.xiushen.manus4j.agent;
 
-import dev.xiushen.manus4j.llm.LlmService;
+import dev.xiushen.manus4j.enums.AgentStatus;
+import lombok.Getter;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,36 +30,28 @@ import java.util.concurrent.locks.ReentrantLock;
 public abstract class BaseAgent {
 
 	private static final Logger logger = LoggerFactory.getLogger(BaseAgent.class);
-
 	private final ReentrantLock lock = new ReentrantLock();
 
-	private String conversationId;
-
-	private String name = "Unique name of the agent";
-
-	private String description = "Optional agent description";
-
+	@Getter
+    @Setter
+    private String conversationId;
+	@Getter
+    @Setter
+    private String name = "Unique name of the agent";
+	@Getter
+    @Setter
+    private String description = "Optional agent description";
 	private String systemPrompt = "Default system-level instruction prompt";
-
 	private String nextStepPrompt = "Default prompt for determining next action";
-
-	private AgentState state = AgentState.IDLE;
-
-	protected LlmService llmService;
-
+	@Setter
+    private AgentStatus state = AgentStatus.IDLE;
 	private int maxSteps = 8;
-
 	private int currentStep = 0;
-
 	private Map<String, Object> data = new HashMap<>();
-
-	public BaseAgent(LlmService llmService) {
-		this.llmService = llmService;
-	}
 
 	public String run(Map<String, Object> data) {
 		currentStep = 0;
-		if (state != AgentState.IDLE) {
+		if (state != AgentStatus.IDLE) {
 			throw new IllegalStateException("Cannot run agent from state: " + state);
 		}
 
@@ -66,10 +60,10 @@ public abstract class BaseAgent {
 		List<String> results = new ArrayList<>();
 		lock.lock();
 		try {
-			state = AgentState.RUNNING;
-			while (currentStep < maxSteps && !state.equals(AgentState.FINISHED)) {
+			state = AgentStatus.RUNNING;
+			while (currentStep < maxSteps && !state.equals(AgentStatus.FINISHED)) {
 				currentStep++;
-				logger.info("Executing round " + currentStep + "/" + maxSteps);
+                logger.info("Executing round {}/{}", currentStep, maxSteps);
 				String stepResult = step();
 				if (isStuck()) {
 					handleStuckState();
@@ -79,10 +73,9 @@ public abstract class BaseAgent {
 			if (currentStep >= maxSteps) {
 				results.add("Terminated: Reached max rounds (" + maxSteps + ")");
 			}
-		}
-		finally {
+		} finally {
 			lock.unlock();
-			state = AgentState.IDLE; // Reset state after execution
+			state = AgentStatus.IDLE;
 		}
 		return String.join("\n", results);
 	}
@@ -92,7 +85,7 @@ public abstract class BaseAgent {
 	private void handleStuckState() {
 		String stuckPrompt = "Observed duplicate responses. Consider new strategies and avoid repeating ineffective paths already attempted.";
 		nextStepPrompt = stuckPrompt + "\n" + nextStepPrompt;
-		logger.warn("Agent detected stuck state. Added prompt: " + stuckPrompt);
+        logger.warn("Agent detected stuck state. Added prompt: {}", stuckPrompt);
 	}
 
 	/**
@@ -103,40 +96,11 @@ public abstract class BaseAgent {
 		return false;
 	}
 
-	public String getName() {
-		return name;
-	}
-
-	public void setName(String name) {
-		this.name = name;
-	}
-
-	public String getDescription() {
-		return description;
-	}
-
-	public void setDescription(String description) {
-		this.description = description;
-	}
-
-	public void setState(AgentState state) {
-		this.state = state;
-	}
-
-	public String getConversationId() {
-		return conversationId;
-	}
-
-	public void setConversationId(String conversationId) {
-		this.conversationId = conversationId;
-	}
-
-	Map<String, Object> getData() {
+    Map<String, Object> getData() {
 		return data;
 	}
 
 	void setData(Map<String, Object> data) {
 		this.data = data;
 	}
-
 }

@@ -18,6 +18,7 @@ package dev.xiushen.manus4j.tool.support;
 
 import cn.hutool.core.util.ByteUtil;
 import com.google.common.net.InetAddresses;
+import dev.xiushen.manus4j.utils.IPUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -43,7 +44,7 @@ public class LogIdGenerator {
 
 	private static final short CUR_VERSION = 0;
 
-	private static final int CUR_IP = InetAddresses.coerceToInteger(InetAddresses.forString(IpUtils.getLocalIp()));
+	private static final int CUR_IP = InetAddresses.coerceToInteger(InetAddresses.forString(IPUtils.getLocalIp()));
 
 	private static final AtomicInteger SERIAL_GEN = new AtomicInteger(Integer.MIN_VALUE);
 
