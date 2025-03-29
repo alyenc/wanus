@@ -18,7 +18,7 @@ public class SummaryService {
     @Tool(name = "summary", description = "Record the result of current step")
     public ToolExecuteResult summary(String toolInput) {
         LOGGER.info("Summary toolInput:{}", toolInput);
-        agent.setState(AgentStatus.FINISHED);
+        agent.setStatus(AgentStatus.FINISHED);
         return new ToolExecuteResult(toolInput);
     }
 }

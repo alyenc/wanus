@@ -17,6 +17,7 @@ package dev.xiushen.manus4j.flow;
 
 import com.google.common.cache.Cache;
 import dev.xiushen.manus4j.agent.BaseAgent;
+import dev.xiushen.manus4j.common.ChatMemories;
 import dev.xiushen.manus4j.common.CommonCache;
 import dev.xiushen.manus4j.enums.StepStatus;
 import dev.xiushen.manus4j.utils.CommonUtils;
@@ -25,9 +26,11 @@ import jakarta.annotation.Resource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.ai.tool.ToolCallbackProvider;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,12 +50,14 @@ public class PlanningFlow extends BaseFlow {
 	private ChatClient planningChatClient;
 	@Resource
 	private ChatClient finalizeChatClient;
+	@Resource
+	private ToolCallbackProvider plannerToolCallbackProvider;
 
 	private String activePlanId;
 	private List<String> executorKeys;
 	private Integer currentStepIndex;
 
-	public PlanningFlow(Map<String, BaseAgent> agents, Map<String, Object> data) {
+	public PlanningFlow(List<BaseAgent> agents, Map<String, Object> data) {
 		super(agents, data);
 
 		this.executorKeys = new ArrayList<>();
@@ -66,22 +71,11 @@ public class PlanningFlow extends BaseFlow {
 			this.activePlanId = "plan_" + System.currentTimeMillis();
 		}
 
-		if (this.executorKeys.isEmpty()) {
-			this.executorKeys.addAll(agents.keySet());
-		}
-	}
-
-	public BaseAgent getExecutor(String stepType) {
-		if (stepType != null && agents.containsKey(stepType)) {
-			return agents.get(stepType);
-		}
-
-		for (String key : executorKeys) {
-			if (agents.containsKey(key)) {
-				return agents.get(key);
+		if (executorKeys.isEmpty()) {
+			for (BaseAgent agent : agents) {
+				executorKeys.add(agent.getName().toUpperCase());
 			}
 		}
-		throw new RuntimeException("agent not found");
 	}
 
 	@Override
@@ -124,40 +118,90 @@ public class PlanningFlow extends BaseFlow {
 		}
 	}
 
+	public BaseAgent getExecutor(String stepType) {
+		BaseAgent defaultAgent = null;
+
+		if (stepType != null) {
+			stepType = stepType.toUpperCase();
+			for (BaseAgent agent : agents) {
+				String agentUpper = agent.getName().toUpperCase();
+				if (agentUpper.equals(stepType)) {
+					return agent;
+				}
+				if (agentUpper.equals("MANUS")) {
+					defaultAgent = agent;
+				}
+			}
+		}
+
+		if (defaultAgent == null) {
+			log.warn("Agent not found for type: {}. No MANUS agent found as fallback.", stepType);
+			// 继续尝试获取第一个可用的 agent
+			if (!agents.isEmpty()) {
+				defaultAgent = agents.get(0);
+				log.warn("Using first available agent as fallback: {}", defaultAgent.getName());
+			} else {
+				throw new RuntimeException("No agents available in the system");
+			}
+		} else {
+			log.info("Agent not found for type: {}. Using MANUS agent as fallback.", stepType);
+		}
+
+		return defaultAgent;
+	}
+
 	public void createInitialPlan(String request) {
         log.info("Creating initial plan with ID: {}", activePlanId);
 
-		String prompt_template = """
-				Create a reasonable plan with clear steps to accomplish the task:
+		// 构建agents信息
+		StringBuilder agentsInfo = new StringBuilder("Available Agents:\n");
+		agents.forEach(agent -> {
+			agentsInfo.append("- Agent Name ")
+					.append(": ")
+					.append(agent.getName().toUpperCase())
+					.append("\n")
+					.append("  Description: ")
+					.append(agent.getDescription())
+					.append("\n");
+		});
 
-				            {query}
+		String prompt = """
+				Create a reasonable plan with clear steps to accomplish the task.
+
+				Available Agents Information:
+				{agents_info}
+
+				Task to accomplish:
+				{query}
 
 				You can use the planning tool to help you create the plan, assign {plan_id} as the plan id.
+
+				Important: For each step in the plan, start with [AGENT_NAME] where AGENT_NAME is one of the available agents listed above.
+				For example: "[BROWSER_AGENT] Search for relevant information" or "[REACT_AGENT] Process the search results"
 				""";
 
-		PromptTemplate promptTemplate = new PromptTemplate(prompt_template);
-		Prompt userPrompt = promptTemplate.create(Map.of("plan_id", activePlanId, "query", request));
+		PromptTemplate promptTemplate = new PromptTemplate(prompt);
+		Prompt userPrompt = promptTemplate
+				.create(Map.of("plan_id", activePlanId, "query", request, "agents_info", agentsInfo.toString()));
 		ChatResponse response = planningChatClient
-			.prompt(userPrompt)
-			.advisors(memoryAdvisor -> memoryAdvisor.param(CHAT_MEMORY_CONVERSATION_ID_KEY, activePlanId)
-				.param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 100))
-			.user(request)
-			.call()
-			.chatResponse();
+				.prompt(userPrompt)
+				.tools(plannerToolCallbackProvider)
+				.advisors(memoryAdvisor -> memoryAdvisor.param(CHAT_MEMORY_CONVERSATION_ID_KEY, activePlanId)
+						.param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 100))
+				.user(request)
+				.call()
+				.chatResponse();
 
 		if (response != null && response.getResult() != null) {
             log.info("Plan creation result: {}", response.getResult().getOutput().getText());
 		} else {
 			log.warn("Creating default plan");
 			Map<String, Object> defaultArgumentMap = new HashMap<>();
+			defaultArgumentMap.put("command", "create");
 			defaultArgumentMap.put("plan_id", activePlanId);
 			defaultArgumentMap.put("title", "Plan for: " + request.substring(0, Math.min(request.length(), 50))
 					+ (request.length() > 50 ? "..." : ""));
-
-			List<String> steps = Arrays.asList("Analyze request", "Execute task", "Verify results");
-			defaultArgumentMap.put("steps", steps);
-			defaultArgumentMap.put("step_statuses", new ArrayList<>(Collections.nCopies(steps.size(), "not_started")));
-			defaultArgumentMap.put("step_notes", new ArrayList<>(Collections.nCopies(steps.size(), "")));
+			defaultArgumentMap.put("steps", Arrays.asList("Analyze request", "Execute task", "Verify results"));
 			planningCache.put(activePlanId, defaultArgumentMap);
 		}
 	}
@@ -321,17 +365,41 @@ public class PlanningFlow extends BaseFlow {
 	public String finalizePlan() {
 		String planText = getPlanText();
 		try {
-			String prompt = "The plan has been completed. Here is the final plan status:\n\n" + planText
-					+ "\n\nPlease provide a summary of what was accomplished and any final thoughts.";
+			String prompt = """
+					Based on the execution history and the final plan status:
 
-			ChatResponse response = finalizeChatClient.prompt().user(prompt).call().chatResponse();
-            if (response != null) {
-                return "Plan completed:\n\n" + response.getResult().getOutput().getText();
-            }
-        } catch (Exception e) {
+					Plan Status:
+					%s
+
+					Please analyze:
+					1. What was the original user request?
+					2. What steps were executed successfully?
+					3. Were there any challenges or failures?
+					4. What specific results were achieved?
+
+					Provide a clear and concise response addressing:
+					- Direct answer to the user's original question
+					- Key accomplishments and findings
+					- Any relevant data or metrics collected
+					- Recommendations or next steps (if applicable)
+
+					Format your response in a user-friendly way.
+					""".formatted(planText);
+
+			ChatResponse response = finalizeChatClient
+					.prompt()
+					.advisors(new MessageChatMemoryAdvisor(ChatMemories.memory))
+					.advisors(memoryAdvisor -> memoryAdvisor.param(CHAT_MEMORY_CONVERSATION_ID_KEY, activePlanId)
+							.param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 100))
+					.user(prompt)
+					.call()
+					.chatResponse();
+
+			return "Plan Summary:\n\n" + response.getResult().getOutput().getText();
+		} catch (Exception e) {
             log.error("Error finalizing plan with LLM: {}", e.getMessage());
+			return "Plan completed. Error generating summary.";
 		}
-		return "Plan completed. Error generating summary.";
 	}
 
 	public void setActivePlanId(String activePlanId) {

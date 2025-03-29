@@ -38,16 +38,13 @@ import java.util.stream.Collectors;
 import static org.apache.commons.lang3.StringUtils.EMPTY;
 
 public class CodeUtils {
+	private static final Logger LOGGER = LoggerFactory.getLogger(CodeUtils.class);
 
-	private static final Logger log = LoggerFactory.getLogger(CodeUtils.class);
+	public static final String WORKING_DIR = Paths.get(System.getProperty("user.dir"), "extensions").toString();
 
 	private static final String CODE_BLOCK_PATTERN = "```(\\w*)\n(.*?)\n```";
-
 	private static final String UNKNOWN = "unknown";
-
 	private static final int DEFAULT_TIMEOUT = 600;
-
-	private static final String WORKING_DIR = Paths.get(System.getProperty("user.dir"), "extensions").toString();
 
 	public static List<Pair<String, String>> extractCode(String text, boolean detectSingleLineCode) {
 		List<Pair<String, String>> extracted = new ArrayList<>();
@@ -94,12 +91,10 @@ public class CodeUtils {
 
 	public static CodeExecutionResult executeCode(String code, String lang, String filename, Boolean arm64,
 												  Map<String, Object> kwargs) {
-		log.info("code:" + code + ", lang:" + lang + ", filename:" + filename + ", arm64:" + arm64 + ", kwargs:"
-				+ kwargs);
-
+        LOGGER.info("code:{}, lang:{}, filename:{}, arm64:{}, kwargs:{}", code, lang, filename, arm64, kwargs);
 		if (code == null && filename == null) {
 			String error_msg = "Either code or filename must be provided.";
-			log.error(error_msg);
+			LOGGER.error(error_msg);
 			throw new AssertionError(error_msg);
 		}
 
@@ -116,8 +111,7 @@ public class CodeUtils {
 		String file_dir = Paths.get(filepath).getParent().toString();
 		try {
 			Files.createDirectories(Paths.get(file_dir));
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			e.printStackTrace();
 		}
 
@@ -126,13 +120,11 @@ public class CodeUtils {
 				FileWriter fout = new FileWriter(filepath);
 				fout.write(code);
 				fout.close();
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				e.printStackTrace();
 			}
 		}
-
-        log.info("filepath:{}", filepath);
+		LOGGER.info("filepath:{}", filepath);
 
 		ExecuteCommandResult executeCommandResult = null;
 		if (lang.equals("python")) {
@@ -144,8 +136,7 @@ public class CodeUtils {
 			cmds.add("python3");
 			cmds.add(filepath);
 			executeCommandResult = CodeUtils.executeCommand(cmds.toArray(new String[] {}));
-		}
-		else if (lang.equals("sh")) {
+		} else if (lang.equals("sh")) {
 			String[] cmd = { "sh", filepath, };
 			executeCommandResult = CodeUtils.executeCommand(cmd);
 		}
@@ -166,14 +157,14 @@ public class CodeUtils {
 
 			BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
 			String errorResult = read(errorReader);
-			log.info("read python error={}", errorResult);
+			LOGGER.info("read python error={}", errorResult);
 
 			int exitCode = process.waitFor();
 
 			if (exitCode == 0) {
 				BufferedReader inputReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 				String successResult = read(inputReader);
-				log.info("read python success={}", successResult);
+				LOGGER.info("read python success={}", successResult);
 
 				exitCode = process.waitFor();
 
@@ -187,9 +178,8 @@ public class CodeUtils {
 			executeCommandResult.setExitCode(exitCode);
 			executeCommandResult.setOutput(errorResult);
 			return executeCommandResult;
-		}
-		catch (Exception e) {
-			log.error("executePythonCode error", e);
+		} catch (Exception e) {
+			LOGGER.error("executePythonCode error", e);
 			return null;
 		}
 	}

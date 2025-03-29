@@ -16,9 +16,9 @@
 
 package dev.xiushen.manus4j.config;
 
-import dev.xiushen.manus4j.agent.BaseAgent;
-import dev.xiushen.manus4j.agent.ManusAgent;
+import dev.xiushen.manus4j.agent.*;
 import dev.xiushen.manus4j.flow.PlanningFlow;
+import jakarta.annotation.Resource;
 import org.apache.hc.client5.http.classic.HttpClient;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -32,7 +32,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -44,19 +46,33 @@ import java.util.concurrent.TimeUnit;
 @Configuration
 public class ManusConfig {
 
+	@Resource(name = "manusToolCallbackProvider")
+	private ToolCallbackProvider manusToolCallbackProvider;
+	@Resource(name = "browserToolCallbackProvider")
+	private ToolCallbackProvider browserToolCallbackProvider;
+	@Resource(name = "pythonToolCallbackProvider")
+	private ToolCallbackProvider pythonToolCallbackProvider;
+	@Resource(name = "fileToolCallbackProvider")
+	private ToolCallbackProvider fileToolCallbackProvider;
+
+
 	@Bean
 	public PlanningFlow planningFlow(
 			ChatClient chatClient,
-			ToolCallbackProvider manusToolCallbackProvider,
 			ToolCallingManager toolCallingManager) {
 		ManusAgent manusAgent = new ManusAgent(chatClient, manusToolCallbackProvider, toolCallingManager);
-		Map<String, BaseAgent> agentMap = new HashMap<>() {
-			{
-				put("manus", manusAgent);
-			}
-		};
+		BrowserAgent browserAgent = new BrowserAgent(chatClient, browserToolCallbackProvider, toolCallingManager);
+		FileAgent fileAgent = new FileAgent(chatClient, fileToolCallbackProvider, toolCallingManager);
+		PythonAgent pythonAgent = new PythonAgent(chatClient, pythonToolCallbackProvider, toolCallingManager);
+
+		List<BaseAgent> agentList = new ArrayList<>();
+		agentList.add(manusAgent);
+		agentList.add(browserAgent);
+		agentList.add(fileAgent);
+		agentList.add(pythonAgent);
+
 		Map<String, Object> data = new HashMap<>();
-		return new PlanningFlow(agentMap, data);
+		return new PlanningFlow(agentList, data);
 	}
 
 	@Bean

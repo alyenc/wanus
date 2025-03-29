@@ -17,13 +17,14 @@ package dev.xiushen.manus4j.flow;
 
 import dev.xiushen.manus4j.agent.BaseAgent;
 
+import java.util.List;
 import java.util.Map;
 
 public abstract class BaseFlow {
 
-	protected Map<String, BaseAgent> agents;
+	protected List<BaseAgent> agents;
 
-	public BaseFlow(Map<String, BaseAgent> agents, Map<String, Object> data) {
+	public BaseFlow(List<BaseAgent> agents, Map<String, Object> data) {
 		this.agents = agents;
 		data.put("agents", agents);
 	}
