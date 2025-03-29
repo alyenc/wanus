@@ -1,13 +1,13 @@
 {
     "mcpServers": {
-        "baidu-map": {
+        "amap-maps": {
             "command": "npx",
             "args": [
                 "-y",
-                "@baidumap/mcp-server-baidu-map"
+                "@amap/amap-maps-mcp-server"
             ],
             "env": {
-                "BAIDU_MAP_API_KEY": "your_baidu_AK"
+                "AMAP_MAPS_API_KEY": ""
             }
         }
     }
