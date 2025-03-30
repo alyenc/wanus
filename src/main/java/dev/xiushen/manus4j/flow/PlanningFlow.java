@@ -23,6 +23,7 @@ import dev.xiushen.manus4j.enums.StepStatus;
 import dev.xiushen.manus4j.utils.CommonUtils;
 import dev.xiushen.manus4j.utils.PlanningUtils;
 import jakarta.annotation.Resource;
+import org.apache.commons.io.file.FilesUncheck;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -50,8 +51,8 @@ public class PlanningFlow extends BaseFlow {
 	private ChatClient planningChatClient;
 	@Resource
 	private ChatClient finalizeChatClient;
-	@Resource
-	private ToolCallbackProvider plannerToolCallbackProvider;
+	@Resource(name = "planningToolCallbackProvider")
+	private ToolCallbackProvider planningToolCallbackProvider;
 
 	private String activePlanId;
 	private List<String> executorKeys;
@@ -128,7 +129,7 @@ public class PlanningFlow extends BaseFlow {
 				if (agentUpper.equals(stepType)) {
 					return agent;
 				}
-				if (agentUpper.equals("MANUS")) {
+				if (agentUpper.equals("MANUSAGENT")) {
 					defaultAgent = agent;
 				}
 			}
@@ -158,7 +159,7 @@ public class PlanningFlow extends BaseFlow {
 		agents.forEach(agent -> {
 			agentsInfo.append("- Agent Name ")
 					.append(": ")
-					.append(agent.getName().toUpperCase())
+					.append(agent.getName())
 					.append("\n")
 					.append("  Description: ")
 					.append(agent.getDescription())
@@ -180,12 +181,13 @@ public class PlanningFlow extends BaseFlow {
 				For example: "[BROWSER_AGENT] Search for relevant information" or "[REACT_AGENT] Process the search results"
 				""";
 
+		log.info("Available agents: {}", agentsInfo);
 		PromptTemplate promptTemplate = new PromptTemplate(prompt);
 		Prompt userPrompt = promptTemplate
 				.create(Map.of("plan_id", activePlanId, "query", request, "agents_info", agentsInfo.toString()));
 		ChatResponse response = planningChatClient
 				.prompt(userPrompt)
-				.tools(plannerToolCallbackProvider)
+				.tools(planningToolCallbackProvider)
 				.advisors(memoryAdvisor -> memoryAdvisor.param(CHAT_MEMORY_CONVERSATION_ID_KEY, activePlanId)
 						.param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 100))
 				.user(request)

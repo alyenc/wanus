@@ -55,7 +55,7 @@ public abstract class BaseAgent {
 			status = AgentStatus.RUNNING;
 			while (currentStep < maxSteps && !status.equals(AgentStatus.FINISHED)) {
 				currentStep++;
-				LOGGER.info("Executing round " + currentStep + "/" + maxSteps);
+                LOGGER.info("Executing round {}/{}", currentStep, maxSteps);
 				String stepResult = step();
 				if (isStuck()) {
 					handleStuckState();

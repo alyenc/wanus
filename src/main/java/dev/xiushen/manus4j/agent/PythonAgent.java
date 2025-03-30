@@ -49,13 +49,13 @@ public class PythonAgent extends ToolCallAgent {
 
 	@Override
 	public String getName() {
-		return "PYTHON_AGENT";
+		return "PythonAgent";
 	}
 
 	@Override
 	public String getDescription() {
 		return """
-				PYTHON AGENT can directly execute Python code and return results. Supports libraries like math, numpy, numexpr, etc.
+				PythonAgent can directly execute Python code and return results. Supports libraries like math, numpy, numexpr, etc.
 				Agent Usage:
 				One agent step can execute Python code without need to write and run separately.
 				Agent Input: What you want this Python code to do.

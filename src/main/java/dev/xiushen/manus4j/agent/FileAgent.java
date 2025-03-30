@@ -44,7 +44,7 @@ public class FileAgent extends ToolCallAgent {
 
 	@Override
 	public String getName() {
-		return "FILE_AGENT";
+		return "FileAgent";
 	}
 
 	@Override

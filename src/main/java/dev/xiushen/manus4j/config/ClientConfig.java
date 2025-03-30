@@ -1,15 +1,11 @@
 package dev.xiushen.manus4j.config;
 
 import dev.xiushen.manus4j.common.ChatMemories;
-import jakarta.annotation.Resource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
-import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.memory.InMemoryChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -133,6 +129,8 @@ public class ClientConfig {
             + "- Complex requests are broken down into specific components\n"
             + "- We build on successful interactions to tackle increasingly complex challenges";
 
+    private static final String FINALIZE_SYSTEM_PROMPT = "You are a planning assistant. Your task is to summarize the completed plan.";
+
     private static final String MANUS_SYSTEM_PROMPT = """
 			You are OpenManus, an all-capable AI assistant, aimed at solving any task presented by the user. You have various tools at your disposal that you can call upon to efficiently complete complex requests. Whether it's programming, information retrieval, file processing, or web browsing, you can handle it all.
 
@@ -155,21 +153,12 @@ public class ClientConfig {
 			When you are done with the task, you can finalize the plan by summarizing the steps taken and the output of each step, call Summary tool to record the result.
 
 			""";
-
-    private static final String FINALIZE_SYSTEM_PROMPT = "You are a planning assistant. Your task is to summarize the completed plan.";
-
-    @Resource
-    private ToolCallbackProvider planningToolCallbackProvider;
-    @Resource
-    private ToolCallbackProvider manusToolCallbackProvider;
-
     @Bean
     public ChatClient planningChatClient(ChatModel chatModel) {
         return ChatClient.builder(chatModel)
                 .defaultSystem(PLANNING_SYSTEM_PROMPT)
                 .defaultAdvisors(new MessageChatMemoryAdvisor(ChatMemories.planningMemory))
                 .defaultAdvisors(new SimpleLoggerAdvisor())
-                .defaultTools(planningToolCallbackProvider)
                 .build();
     }
 
@@ -179,7 +168,6 @@ public class ClientConfig {
                 .defaultSystem(MANUS_SYSTEM_PROMPT)
                 .defaultAdvisors(new MessageChatMemoryAdvisor(ChatMemories.memory))
                 .defaultAdvisors(new SimpleLoggerAdvisor())
-                .defaultTools(manusToolCallbackProvider)
                 .defaultOptions(OpenAiChatOptions.builder().internalToolExecutionEnabled(false).build())
                 .build();
     }

@@ -55,7 +55,6 @@ public class ManusConfig {
 	@Resource(name = "fileToolCallbackProvider")
 	private ToolCallbackProvider fileToolCallbackProvider;
 
-
 	@Bean
 	public PlanningFlow planningFlow(
 			ChatClient chatClient,

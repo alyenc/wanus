@@ -1,6 +1,9 @@
 package dev.xiushen.manus4j.tool;
 
-import dev.xiushen.manus4j.common.ChromeDriver;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import dev.xiushen.manus4j.common.ChromeDriverRunner;
+import dev.xiushen.manus4j.common.CommonCache;
 import dev.xiushen.manus4j.tool.support.ToolExecuteResult;
 import org.apache.commons.lang3.StringUtils;
 import org.openqa.selenium.*;
@@ -19,17 +22,18 @@ public class BrowserService {
     private static final Logger LOGGER = LoggerFactory.getLogger(BrowserService.class);
 
     private static final String INTERACTIVE_ELEMENTS_SELECTOR = "a, button, input, select, textarea, [role='button'], [role='link']";
+    private static final Cache<String, Object> browserCache = CommonCache.browserCache;
 
-    private final ChromeDriver chromeDriver;
+    private final ChromeDriverRunner chromeDriverRunner;
 
     private static final int MAX_LENGTH = 3000;
 
-    public BrowserService(ChromeDriver chromeDriver) {
-        this.chromeDriver = chromeDriver;
+    public BrowserService(ChromeDriverRunner chromeDriverRunner) {
+        this.chromeDriverRunner = chromeDriverRunner;
     }
 
     private WebDriver getDriver() {
-        return chromeDriver.getDriver();
+        return chromeDriverRunner.getDriver();
     }
 
     @Tool(
@@ -44,6 +48,7 @@ public class BrowserService {
                 return new ToolExecuteResult("URL is required for 'navigate' action");
             }
             driver.get(url);
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Navigated to " + url);
         } catch (Exception e) {
             if (e instanceof ElementNotInteractableException) {
@@ -61,6 +66,7 @@ public class BrowserService {
                         e.getMessage());
                 return new ToolExecuteResult(errorMessage);
             }
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'navigate' failed: " + e.getMessage());
         }
     }
@@ -94,8 +100,7 @@ public class BrowserService {
             simulateHumanBehavior(element);
             try {
                 element.click();
-            }
-            catch (ElementClickInterceptedException e) {
+            } catch (ElementClickInterceptedException e) {
                 // 如果普通点击失败，尝试使用 JavaScript 点击
                 JavascriptExecutor js = (JavascriptExecutor) driver;
                 js.executeScript("arguments[0].click();", element);
@@ -126,12 +131,14 @@ public class BrowserService {
                 }
 
                 // 如果没有明显变化，返回普通点击成功消息
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult("Clicked element at index " + index);
             } catch (TimeoutException e) {
                 // 如果超时，检查是否仍在原页面
                 if (!StringUtils.equals(driver.getCurrentUrl(), currentUrl)) {
                     return new ToolExecuteResult("Clicked and page changed to: " + driver.getCurrentUrl());
                 }
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(
                         "Clicked element at index " + index + " (no visible navigation occurred)");
             }
@@ -149,8 +156,10 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'click' failed: " + e.getMessage());
         }
     }
@@ -177,6 +186,8 @@ public class BrowserService {
                 return new ToolExecuteResult("Element at index " + index + " is not an input element");
             }
             typeWithHumanDelay(inputElement, text);
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Successfully input '" + text + "' into element at index " + index);
         } catch (Exception e) {
             if (e instanceof ElementNotInteractableException) {
@@ -192,8 +203,10 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'inputText' failed: " + e.getMessage());
         }
     }
@@ -216,6 +229,8 @@ public class BrowserService {
             }
             WebElement enterElement = interactiveElements.get(index);
             enterElement.sendKeys(Keys.RETURN);
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Hit the enter key at index " + index);
         } catch (Exception e) {
             if (e instanceof ElementNotInteractableException) {
@@ -231,8 +246,10 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'keyEnter' failed: " + e.getMessage());
         }
 
@@ -247,6 +264,8 @@ public class BrowserService {
             WebDriver driver = getDriver();
             TakesScreenshot screenshot = (TakesScreenshot) driver;
             String base64Screenshot = screenshot.getScreenshotAs(OutputType.BASE64);
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult(
                     "Screenshot captured (base64 length: " + base64Screenshot.length() + ")");
         } catch (Exception e) {
@@ -263,8 +282,12 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'screenshot' failed: " + e.getMessage());
         }
     }
@@ -277,6 +300,8 @@ public class BrowserService {
         try {
             WebDriver driver = getDriver();
             String html = driver.getPageSource();
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult(
                     html.length() > MAX_LENGTH ? html.substring(0, MAX_LENGTH) + "..." : html);
         } catch (Exception e) {
@@ -293,8 +318,12 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'getHtml' failed: " + e.getMessage());
         }
     }
@@ -308,6 +337,8 @@ public class BrowserService {
             WebDriver driver = getDriver();
             String body = driver.findElement(By.tagName("body")).getText();
             LOGGER.info("get_text body is {}", body);
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult(body);
         } catch (Exception e) {
             if (e instanceof ElementNotInteractableException) {
@@ -323,8 +354,12 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'getText' failed: " + e.getMessage());
         }
     }
@@ -342,6 +377,8 @@ public class BrowserService {
             }
             JavascriptExecutor jsExecutor = (JavascriptExecutor) driver;
             Object result = jsExecutor.executeScript(script);
+
+            browserCache.putAll(getCurrentState());
             if (result == null) {
                 return new ToolExecuteResult("Successfully executed JavaScript code.");
             } else {
@@ -361,8 +398,10 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'executeJs' failed: " + e.getMessage());
         }
     }
@@ -380,6 +419,8 @@ public class BrowserService {
             }
             ((JavascriptExecutor) driver).executeScript("window.scrollBy(0," + scrollAmount + ");");
             String direction = scrollAmount > 0 ? "down" : "up";
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Scrolled " + direction + " by " + Math.abs(scrollAmount) + " pixels");
         } catch (Exception e) {
             if (e instanceof ElementNotInteractableException) {
@@ -395,8 +436,10 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'scroll' failed: " + e.getMessage());
         }
     }
@@ -413,6 +456,8 @@ public class BrowserService {
                 return new ToolExecuteResult("URL is required for 'new_tab' action");
             }
             ((JavascriptExecutor) driver).executeScript("window.open('" + url + "', '_blank');");
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Opened new tab with URL " + url);
         } catch (Exception e) {
             if (e instanceof ElementNotInteractableException) {
@@ -428,8 +473,12 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'newTab' failed: " + e.getMessage());
         }
     }
@@ -442,6 +491,8 @@ public class BrowserService {
         try {
             WebDriver driver = getDriver();
             driver.close();
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Closed current tab");
         } catch (Exception e) {
             if (e instanceof ElementNotInteractableException) {
@@ -457,8 +508,12 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'closeCurrentTab' failed: " + e.getMessage());
         }
     }
@@ -472,10 +527,13 @@ public class BrowserService {
         try {
             WebDriver driver = getDriver();
             if (tabId == null) {
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult("Tab ID is out of range for 'switch_tab' action");
             }
             Object[] windowHandles = driver.getWindowHandles().toArray();
             driver.switchTo().window(windowHandles[tabId].toString());
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Switched to tab " + tabId);
         } catch (Exception e) {
             if (e instanceof ElementNotInteractableException) {
@@ -491,8 +549,12 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'switchTab' failed: " + e.getMessage());
         }
     }
@@ -505,6 +567,8 @@ public class BrowserService {
         try {
             WebDriver driver = getDriver();
             driver.navigate().refresh();
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Refreshed current page");
         } catch (Exception e) {
             if (e instanceof ElementNotInteractableException) {
@@ -520,9 +584,73 @@ public class BrowserService {
                                 %s
                                 """,
                         e.getMessage());
+
+                browserCache.putAll(getCurrentState());
                 return new ToolExecuteResult(errorMessage);
             }
+
+            browserCache.putAll(getCurrentState());
             return new ToolExecuteResult("Browser action 'refresh' failed: " + e.getMessage());
+        }
+    }
+
+    public Map<String, Object> getCurrentState() {
+        WebDriver driver = getDriver();
+        Map<String, Object> state = new HashMap<>();
+
+        try {
+            // 等待页面加载完成
+            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(10));
+
+            // 获取基本信息
+            String currentUrl = driver.getCurrentUrl();
+            String title = driver.getTitle();
+            state.put("url", currentUrl);
+            state.put("title", title);
+
+            // 获取标签页信息
+            Set<String> windowHandles = driver.getWindowHandles();
+            List<Map<String, Object>> tabs = new ArrayList<>();
+            String currentHandle = driver.getWindowHandle();
+            for (String handle : windowHandles) {
+                driver.switchTo().window(handle);
+                tabs.add(Map.of("url", driver.getCurrentUrl(), "title", driver.getTitle(), "id", handle));
+            }
+            driver.switchTo().window(currentHandle); // 切回原始标签页
+            state.put("tabs", tabs);
+
+            // 获取viewport和滚动信息
+            JavascriptExecutor js = (JavascriptExecutor) driver;
+            Long scrollTop = (Long) js.executeScript("return window.pageYOffset;");
+            Long scrollHeight = (Long) js.executeScript("return document.documentElement.scrollHeight;");
+            Long viewportHeight = (Long) js.executeScript("return window.innerHeight;");
+
+            Map<String, Object> scrollInfo = new HashMap<>();
+            scrollInfo.put("pixels_above", scrollTop);
+            scrollInfo.put("pixels_below", Math.max(0, scrollHeight - (scrollTop + viewportHeight)));
+            scrollInfo.put("total_height", scrollHeight);
+            scrollInfo.put("viewport_height", viewportHeight);
+            state.put("scroll_info", scrollInfo);
+
+            // 获取可交互元素
+            String elementsInfo = getInteractiveElementsInfo(driver);
+            state.put("interactive_elements", elementsInfo);
+
+            // 捕获截图
+            TakesScreenshot screenshot = (TakesScreenshot) driver;
+            String base64Screenshot = screenshot.getScreenshotAs(OutputType.BASE64);
+            state.put("screenshot", base64Screenshot);
+
+            // 添加帮助信息
+            state.put("help", "[0], [1], [2], etc., represent clickable indices corresponding to the elements listed. "
+                    + "Clicking on these indices will navigate to or interact with the respective content behind them.");
+
+            return state;
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to get browser state", e);
+            state.put("error", "Failed to get browser state: " + e.getMessage());
+            return state;
         }
     }
 
@@ -643,66 +771,6 @@ public class BrowserService {
         }
 
         return resultInfo.toString();
-    }
-
-    public Map<String, Object> getCurrentState() {
-        WebDriver driver = getDriver();
-        Map<String, Object> state = new HashMap<>();
-
-        try {
-            // 等待页面加载完成
-            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(10));
-
-            // 获取基本信息
-            String currentUrl = driver.getCurrentUrl();
-            String title = driver.getTitle();
-            state.put("url", currentUrl);
-            state.put("title", title);
-
-            // 获取标签页信息
-            Set<String> windowHandles = driver.getWindowHandles();
-            List<Map<String, Object>> tabs = new ArrayList<>();
-            String currentHandle = driver.getWindowHandle();
-            for (String handle : windowHandles) {
-                driver.switchTo().window(handle);
-                tabs.add(Map.of("url", driver.getCurrentUrl(), "title", driver.getTitle(), "id", handle));
-            }
-            driver.switchTo().window(currentHandle); // 切回原始标签页
-            state.put("tabs", tabs);
-
-            // 获取viewport和滚动信息
-            JavascriptExecutor js = (JavascriptExecutor) driver;
-            Long scrollTop = (Long) js.executeScript("return window.pageYOffset;");
-            Long scrollHeight = (Long) js.executeScript("return document.documentElement.scrollHeight;");
-            Long viewportHeight = (Long) js.executeScript("return window.innerHeight;");
-
-            Map<String, Object> scrollInfo = new HashMap<>();
-            scrollInfo.put("pixels_above", scrollTop);
-            scrollInfo.put("pixels_below", Math.max(0, scrollHeight - (scrollTop + viewportHeight)));
-            scrollInfo.put("total_height", scrollHeight);
-            scrollInfo.put("viewport_height", viewportHeight);
-            state.put("scroll_info", scrollInfo);
-
-            // 获取可交互元素
-            String elementsInfo = getInteractiveElementsInfo(driver);
-            state.put("interactive_elements", elementsInfo);
-
-            // 捕获截图
-            TakesScreenshot screenshot = (TakesScreenshot) driver;
-            String base64Screenshot = screenshot.getScreenshotAs(OutputType.BASE64);
-            state.put("screenshot", base64Screenshot);
-
-            // 添加帮助信息
-            state.put("help", "[0], [1], [2], etc., represent clickable indices corresponding to the elements listed. "
-                    + "Clicking on these indices will navigate to or interact with the respective content behind them.");
-
-            return state;
-
-        } catch (Exception e) {
-            LOGGER.error("Failed to get browser state", e);
-            state.put("error", "Failed to get browser state: " + e.getMessage());
-            return state;
-        }
     }
 
     private boolean isElementVisible(WebElement element) {

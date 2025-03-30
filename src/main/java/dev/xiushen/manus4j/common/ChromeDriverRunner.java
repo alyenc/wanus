@@ -5,6 +5,7 @@ import jakarta.annotation.PreDestroy;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,17 +27,17 @@ import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 @Primary
-public class ChromeDriver implements ApplicationRunner {
+public class ChromeDriverRunner implements ApplicationRunner {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(ChromeDriver.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ChromeDriverRunner.class);
 
     private static final String PID_FILE = "chrome-driver.pid";
 
-    private final AtomicReference<org.openqa.selenium.chrome.ChromeDriver> driver = new AtomicReference<>();
+    private final AtomicReference<ChromeDriver> driver = new AtomicReference<>();
 
     private File pidFile;
 
-    public ChromeDriver() {
+    public ChromeDriverRunner() {
         this.pidFile = new File(System.getProperty("java.io.tmpdir"), PID_FILE);
 
         // 启动时清理可能存在的僵尸进程
@@ -48,6 +49,13 @@ public class ChromeDriver implements ApplicationRunner {
             cleanupAllChromeProcesses();
             deletePidFile();
         }));
+    }
+
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        String chromeDriverPath = getChromeDriverPath(checkOS() ? "data/chromedriver.exe" : "data/chromedriver");
+        System.setProperty("webdriver.chrome.driver", chromeDriverPath);
+        LOGGER.info("ChromeDriver path initialized: {}", chromeDriverPath);
     }
 
     private void cleanupOrphanedProcesses() {
@@ -116,13 +124,6 @@ public class ChromeDriver implements ApplicationRunner {
         }
     }
 
-    @Override
-    public void run(ApplicationArguments args) throws Exception {
-        String chromeDriverPath = getChromeDriverPath(checkOS() ? "data/chromedriver.exe" : "data/chromedriver");
-        System.setProperty("webdriver.chrome.driver", chromeDriverPath);
-        LOGGER.info("ChromeDriver path initialized: {}", chromeDriverPath);
-    }
-
     private String getChromeDriverPath(String resourcePath) throws URISyntaxException {
         URL resource = ManusApplication.class.getClassLoader().getResource(resourcePath);
         if (resource == null) {
@@ -146,7 +147,7 @@ public class ChromeDriver implements ApplicationRunner {
         }
     }
 
-    public org.openqa.selenium.chrome.ChromeDriver getDriver() {
+    public ChromeDriver getDriver() {
         return driver.updateAndGet(existing -> {
             if (existing != null && isDriverActive(existing)) {
                 return existing;
@@ -155,7 +156,7 @@ public class ChromeDriver implements ApplicationRunner {
         });
     }
 
-    private org.openqa.selenium.chrome.ChromeDriver createNewDriver() {
+    private ChromeDriver createNewDriver() {
         org.openqa.selenium.chrome.ChromeDriver newDriver = null;
         try {
             ChromeOptions options = new ChromeOptions();
@@ -189,7 +190,7 @@ public class ChromeDriver implements ApplicationRunner {
             properties.put("navigator.webdriver", false);
             options.setExperimentalOption("excludeSwitches", List.of("enable-automation"));
 
-            newDriver = new org.openqa.selenium.chrome.ChromeDriver(options);
+            newDriver = new ChromeDriver(options);
             String pid = getProcessId(newDriver);
             if (pid != null) {
                 recordProcessId(pid);
@@ -247,7 +248,7 @@ public class ChromeDriver implements ApplicationRunner {
                 """);
     }
 
-    private boolean isDriverActive(org.openqa.selenium.chrome.ChromeDriver driver) {
+    private boolean isDriverActive(ChromeDriver driver) {
         try {
             driver.getCurrentUrl();
             return true;

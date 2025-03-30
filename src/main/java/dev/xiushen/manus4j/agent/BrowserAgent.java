@@ -1,6 +1,7 @@
 package dev.xiushen.manus4j.agent;
 
 import com.google.common.cache.Cache;
+import dev.xiushen.manus4j.common.ChromeDriverRunner;
 import dev.xiushen.manus4j.common.CommonCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,9 +13,7 @@ import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class BrowserAgent extends ToolCallAgent {
 
@@ -173,6 +172,8 @@ public class BrowserAgent extends ToolCallAgent {
         }
 
         Map<String, Object> browserState = browserCache.asMap();
+        LOGGER.info("browserState: {}", browserState);
+
         // 格式化 URL 和标题信息
         String urlInfo = String.format("\n   URL: %s\n   Title: %s", browserState.get("url"),
                 browserState.get("title"));
@@ -183,8 +184,7 @@ public class BrowserAgent extends ToolCallAgent {
         List<Map<String, Object>> tabs = (List<Map<String, Object>>) browserState.get("tabs");
         if (tabs != null && !tabs.isEmpty()) {
             data.put("tabs_placeholder", String.format("\n   %d tab(s) available", tabs.size()));
-        }
-        else {
+        } else {
             data.put("tabs_placeholder", "");
         }
 
@@ -205,8 +205,7 @@ public class BrowserAgent extends ToolCallAgent {
         String interactiveElements = (String) browserState.get("interactive_elements");
         if (interactiveElements != null && !interactiveElements.isEmpty()) {
             data.put("interactive_elements", interactiveElements);
-        }
-        else {
+        } else {
             data.put("interactive_elements", "");
         }
 

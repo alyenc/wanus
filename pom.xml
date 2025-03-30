@@ -9,9 +9,9 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>dev.xiushen</groupId>
-    <artifactId>manus4j</artifactId>
+    <artifactId>wanus</artifactId>
     <version>1.0-SNAPSHOT</version>
-    <name>manus4j</name>
+    <name>wanus</name>
     <description>Demo project for Spring Boot</description>
 
     <properties>

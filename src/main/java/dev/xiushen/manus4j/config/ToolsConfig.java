@@ -1,8 +1,10 @@
 package dev.xiushen.manus4j.config;
 
-import dev.xiushen.manus4j.common.ChromeDriver;
+import dev.xiushen.manus4j.common.ChromeDriverRunner;
 import dev.xiushen.manus4j.tool.*;
+import io.modelcontextprotocol.client.McpAsyncClient;
 import jakarta.annotation.Resource;
+import org.springframework.ai.mcp.McpToolUtils;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
@@ -11,14 +13,20 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * 不同的Agent的工具链配置
+ * 		如果新增第三方工具确保现配置好McpClient，然后将希望添加的MCP客户端添加到第三方工具列表
+ * 		如果新增内置工具在tool包心间Service，将Service的对象添加到toolObjects列表
+ */
 @Configuration
 public class ToolsConfig {
 
 	@Resource
-	private ToolCallbackProvider toolCallbacks;
+	private ChromeDriverRunner chromeDriverRunner;
 
 	@Bean
 	@Primary
@@ -29,55 +37,105 @@ public class ToolsConfig {
 	}
 
 	@Bean
-	public ToolCallbackProvider manusToolCallbackProvider(ChromeDriver chromeDriver) {
-		return ToolCallbackProvider.from(Stream.concat(
+	public ToolCallbackProvider manusToolCallbackProvider(
+			McpAsyncClient amapMcpSyncClient,
+			McpAsyncClient puppeteerMcpSyncClient,
+			McpAsyncClient fileSystemMcpSyncClient
+	) {
+		//第三方工具列表
+		List<ToolCallback> asyncCallbacks = McpToolUtils.getToolCallbacksFromAsyncClients(
+				amapMcpSyncClient,
+//				puppeteerMcpSyncClient,
+				fileSystemMcpSyncClient
+		);
+		return ToolCallbackProvider.from(
+				Stream.concat(
 						Arrays.stream(MethodToolCallbackProvider
 								.builder()
 								.toolObjects(
 										new LocalTimeService(),
-										new BrowserService(chromeDriver),
 										new FileSaveService(),
 										new PythonService(),
-										new DocLoaderService()
-								).build().getToolCallbacks()),
-						Arrays.stream(toolCallbacks.getToolCallbacks()))
-				.map(callback -> (ToolCallback) callback)
-				.collect(Collectors.toList()));
+										new DocLoaderService(),
+										new BrowserService(chromeDriverRunner)
+								)
+								.build()
+								.getToolCallbacks()),
+						asyncCallbacks.stream()
+				).collect(Collectors.toList())
+		);
+	}
+
+	/**
+	 * BrowserAgent的工具链
+	 * 1、第三方工具puppeteer和filesystem
+	 * 2、内置工具PythonService
+	 */
+	@Bean
+	public ToolCallbackProvider browserToolCallbackProvider(
+			McpAsyncClient puppeteerMcpSyncClient,
+			McpAsyncClient fileSystemMcpSyncClient
+	) {
+		//第三方工具列表
+		List<ToolCallback> asyncCallbacks = McpToolUtils.getToolCallbacksFromAsyncClients(
+//				puppeteerMcpSyncClient,
+				fileSystemMcpSyncClient
+		);
+		return ToolCallbackProvider.from(
+				Stream.concat(
+                        Arrays.stream(MethodToolCallbackProvider
+                                .builder()
+                                .toolObjects(
+										new PythonService(),
+										new BrowserService(chromeDriverRunner)
+								)
+                                .build()
+                                .getToolCallbacks()),
+						asyncCallbacks.stream()
+				).collect(Collectors.toList())
+		);
 	}
 
 	@Bean
-	public ToolCallbackProvider browserToolCallbackProvider(ChromeDriver chromeDriver) {
+	public ToolCallbackProvider pythonToolCallbackProvider(
+			McpAsyncClient fileSystemMcpSyncClient
+	) {
+		//第三方工具列表
+		List<ToolCallback> asyncCallbacks = McpToolUtils.getToolCallbacksFromAsyncClients(
+				fileSystemMcpSyncClient
+		);
 		return ToolCallbackProvider.from(
+				Stream.concat(
 						Arrays.stream(MethodToolCallbackProvider
 								.builder()
 								.toolObjects(
-										new BrowserService(chromeDriver),
-										new FileSaveService(),
 										new PythonService()
-								).build().getToolCallbacks())
-								.collect(Collectors.toList()));
+								)
+								.build().getToolCallbacks()),
+						asyncCallbacks.stream()
+				).collect(Collectors.toList())
+		);
 	}
 
 	@Bean
-	public ToolCallbackProvider pythonToolCallbackProvider() {
+	public ToolCallbackProvider fileToolCallbackProvider(
+			McpAsyncClient fileSystemMcpSyncClient
+	) {
+		//第三方工具列表
+		List<ToolCallback> asyncCallbacks = McpToolUtils.getToolCallbacksFromAsyncClients(
+				fileSystemMcpSyncClient
+		);
 		return ToolCallbackProvider.from(
-						Arrays.stream(MethodToolCallbackProvider
-								.builder()
-								.toolObjects(new PythonService())
-								.build().getToolCallbacks())
-								.collect(Collectors.toList()));
-	}
-
-	@Bean
-	public ToolCallbackProvider fileToolCallbackProvider() {
-		return ToolCallbackProvider.from(
-						Arrays.stream(MethodToolCallbackProvider
+				Stream.concat(
+						Arrays.stream(
+								MethodToolCallbackProvider
 								.builder()
 								.toolObjects(
-										new FileSaveService(),
 										new DocLoaderService()
 								)
-								.build().getToolCallbacks())
-								.collect(Collectors.toList()));
+								.build().getToolCallbacks()),
+						asyncCallbacks.stream()
+				).collect(Collectors.toList())
+		);
 	}
 }
