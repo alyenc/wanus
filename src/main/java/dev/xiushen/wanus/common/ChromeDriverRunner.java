@@ -1,6 +1,6 @@
 package dev.xiushen.wanus.common;
 
-import dev.xiushen.wanus.ManusApplication;
+import dev.xiushen.wanus.WanusApplication;
 import jakarta.annotation.PreDestroy;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.JavascriptExecutor;
@@ -125,7 +125,7 @@ public class ChromeDriverRunner implements ApplicationRunner {
     }
 
     private String getChromeDriverPath(String resourcePath) throws URISyntaxException {
-        URL resource = ManusApplication.class.getClassLoader().getResource(resourcePath);
+        URL resource = WanusApplication.class.getClassLoader().getResource(resourcePath);
         if (resource == null) {
             throw new IllegalStateException("ChromeDriver not found: " + resourcePath);
         }

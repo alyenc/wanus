@@ -42,7 +42,7 @@ import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvis
 
 public class PlanningFlow extends BaseFlow {
 
-	private static final Logger log = LoggerFactory.getLogger(PlanningFlow.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(PlanningFlow.class);
 
 	private static final Cache<String, Map<String, Object>> planningCache = CommonCache.planningCache;
 
@@ -84,7 +84,7 @@ public class PlanningFlow extends BaseFlow {
 			if (inputText != null && !inputText.isEmpty()) {
 				createInitialPlan(inputText);
 				if (!planningCache.asMap().containsKey(activePlanId)) {
-                    log.error("Plan creation failed. Plan ID {} not found in planning tool.", activePlanId);
+					LOGGER.error("Plan creation failed. Plan ID {} not found in planning tool.", activePlanId);
 					return "Failed to create plan for: " + inputText;
 				}
 			}
@@ -113,7 +113,7 @@ public class PlanningFlow extends BaseFlow {
 
 			return result.toString();
 		} catch (Exception e) {
-			log.error("Error in PlanningFlow", e);
+			LOGGER.error("Error in PlanningFlow", e);
 			return "Execution failed: " + e.getMessage();
 		}
 	}
@@ -135,23 +135,23 @@ public class PlanningFlow extends BaseFlow {
 		}
 
 		if (defaultAgent == null) {
-			log.warn("Agent not found for type: {}. No MANUS agent found as fallback.", stepType);
+			LOGGER.warn("Agent not found for type: {}. No MANUSAGENT found as fallback.", stepType);
 			// 继续尝试获取第一个可用的 agent
 			if (!agents.isEmpty()) {
 				defaultAgent = agents.get(0);
-				log.warn("Using first available agent as fallback: {}", defaultAgent.getName());
+				LOGGER.warn("Using first available agent as fallback: {}", defaultAgent.getName());
 			} else {
 				throw new RuntimeException("No agents available in the system");
 			}
 		} else {
-			log.info("Agent not found for type: {}. Using MANUS agent as fallback.", stepType);
+			LOGGER.info("Agent not found for type: {}. Using MANUS agent as fallback.", stepType);
 		}
 
 		return defaultAgent;
 	}
 
 	public void createInitialPlan(String request) {
-        log.info("Creating initial plan with ID: {}", activePlanId);
+		LOGGER.info("Creating initial plan with ID: {}", activePlanId);
 
 		// 构建agents信息
 		StringBuilder agentsInfo = new StringBuilder("Available Agents:\n");
@@ -180,7 +180,6 @@ public class PlanningFlow extends BaseFlow {
 				For example: "[BROWSER_AGENT] Search for relevant information" or "[REACT_AGENT] Process the search results"
 				""";
 
-		log.info("Available agents: {}", agentsInfo);
 		PromptTemplate promptTemplate = new PromptTemplate(prompt);
 		Prompt userPrompt = promptTemplate
 				.create(Map.of("plan_id", activePlanId, "query", request, "agents_info", agentsInfo.toString()));
@@ -194,9 +193,9 @@ public class PlanningFlow extends BaseFlow {
 				.chatResponse();
 
 		if (response != null && response.getResult() != null) {
-            log.info("Plan creation result: {}", response.getResult().getOutput().getText());
+			LOGGER.info("Plan creation result: {}", response.getResult().getOutput().getText());
 		} else {
-			log.warn("Creating default plan");
+			LOGGER.warn("Creating default plan");
 			Map<String, Object> defaultArgumentMap = new HashMap<>();
 			defaultArgumentMap.put("command", "create");
 			defaultArgumentMap.put("plan_id", activePlanId);
@@ -209,7 +208,7 @@ public class PlanningFlow extends BaseFlow {
 
 	public Map.Entry<Integer, Map<String, String>> getCurrentStepInfo() {
 		if (activePlanId == null || !planningCache.asMap().containsKey(activePlanId)) {
-            log.error("Plan with ID {} not found", activePlanId);
+			LOGGER.error("Plan with ID {} not found", activePlanId);
 			return null;
 		}
 
@@ -230,14 +229,16 @@ public class PlanningFlow extends BaseFlow {
 					Map<String, String> stepInfo = new HashMap<>();
 					stepInfo.put("text", steps.get(i));
 
-					Pattern pattern = Pattern.compile("\\[([A-Z_]+)]");
+					Pattern pattern = Pattern.compile("\\[\\s*([^]]+)\\s*]");
 					Matcher matcher = pattern.matcher(steps.get(i));
+					LOGGER.info("steps: {}", steps.get(i));
 					if (matcher.find()) {
 						stepInfo.put("type", matcher.group(1).toLowerCase());
 					}
 
 					stepStatuses.set(i, StepStatus.IN_PROGRESS.getValue());
 					planData.put("step_statuses", stepStatuses);
+
 					planningCache.put(activePlanId, planData);
 					return new AbstractMap.SimpleEntry<>(i, stepInfo);
 				}
@@ -245,7 +246,7 @@ public class PlanningFlow extends BaseFlow {
 
 			return null;
 		} catch (Exception e) {
-            log.error("Error finding current step index: {}", e.getMessage());
+			LOGGER.error("Error finding current step index: {}", e.getMessage());
 			return null;
 		}
 	}
@@ -275,11 +276,11 @@ public class PlanningFlow extends BaseFlow {
 
 				return stepResult;
 			} catch (Exception e) {
-                log.error("Error executing step {}: {}", currentStepIndex, e.getMessage());
+				LOGGER.error("Error executing step {}: {}", currentStepIndex, e.getMessage());
 				return "Error executing step " + currentStepIndex + ": " + e.getMessage();
 			}
 		} catch (Exception e) {
-            log.error("Error preparing execution context: {}", e.getMessage());
+			LOGGER.error("Error preparing execution context: {}", e.getMessage());
 			return "Error preparing execution context: " + e.getMessage();
 		}
 	}
@@ -288,7 +289,7 @@ public class PlanningFlow extends BaseFlow {
 		try {
 			return PlanningUtils.formatPlan(planningCache.get(activePlanId, ConcurrentHashMap::new));
 		} catch (Exception e) {
-            log.error("Error getting plan: {}", e.getMessage());
+			LOGGER.error("Error getting plan: {}", e.getMessage());
 			return generatePlanTextFromStorage();
 		}
 	}
@@ -358,7 +359,7 @@ public class PlanningFlow extends BaseFlow {
 
 			return planText.toString();
 		} catch (Exception e) {
-            log.error("Error generating plan text from storage: {}", e.getMessage());
+			LOGGER.error("Error generating plan text from storage: {}", e.getMessage());
 			return "Error: Unable to retrieve plan with ID " + activePlanId;
 		}
 	}
@@ -398,7 +399,7 @@ public class PlanningFlow extends BaseFlow {
 
 			return "Plan Summary:\n\n" + response.getResult().getOutput().getText();
 		} catch (Exception e) {
-            log.error("Error finalizing plan with LLM: {}", e.getMessage());
+			LOGGER.error("Error finalizing plan with LLM: {}", e.getMessage());
 			return "Plan completed. Error generating summary.";
 		}
 	}

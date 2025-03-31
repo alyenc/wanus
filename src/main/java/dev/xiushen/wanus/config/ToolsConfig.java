@@ -3,6 +3,7 @@ package dev.xiushen.wanus.config;
 import dev.xiushen.wanus.common.ChromeDriverRunner;
 import dev.xiushen.wanus.tool.*;
 import io.modelcontextprotocol.client.McpAsyncClient;
+import io.modelcontextprotocol.client.McpSyncClient;
 import jakarta.annotation.Resource;
 import org.springframework.ai.mcp.McpToolUtils;
 import org.springframework.ai.tool.ToolCallback;
@@ -38,12 +39,12 @@ public class ToolsConfig {
 
 	@Bean
 	public ToolCallbackProvider manusToolCallbackProvider(
-			McpAsyncClient amapMcpSyncClient,
-			McpAsyncClient puppeteerMcpSyncClient,
-			McpAsyncClient fileSystemMcpSyncClient
+			McpSyncClient amapMcpSyncClient,
+			McpSyncClient puppeteerMcpSyncClient,
+			McpSyncClient fileSystemMcpSyncClient
 	) {
 		//第三方工具列表
-		List<ToolCallback> asyncCallbacks = McpToolUtils.getToolCallbacksFromAsyncClients(
+		List<ToolCallback> ayncCallbacks = McpToolUtils.getToolCallbacksFromSyncClients(
 				amapMcpSyncClient,
 //				puppeteerMcpSyncClient,
 				fileSystemMcpSyncClient
@@ -61,7 +62,7 @@ public class ToolsConfig {
 								)
 								.build()
 								.getToolCallbacks()),
-						asyncCallbacks.stream()
+						ayncCallbacks.stream()
 				).collect(Collectors.toList())
 		);
 	}
@@ -73,11 +74,11 @@ public class ToolsConfig {
 	 */
 	@Bean
 	public ToolCallbackProvider browserToolCallbackProvider(
-			McpAsyncClient puppeteerMcpSyncClient,
-			McpAsyncClient fileSystemMcpSyncClient
+			McpSyncClient puppeteerMcpSyncClient,
+			McpSyncClient fileSystemMcpSyncClient
 	) {
 		//第三方工具列表
-		List<ToolCallback> asyncCallbacks = McpToolUtils.getToolCallbacksFromAsyncClients(
+		List<ToolCallback> syncCallbacks = McpToolUtils.getToolCallbacksFromSyncClients(
 //				puppeteerMcpSyncClient,
 				fileSystemMcpSyncClient
 		);
@@ -91,17 +92,17 @@ public class ToolsConfig {
 								)
                                 .build()
                                 .getToolCallbacks()),
-						asyncCallbacks.stream()
+						syncCallbacks.stream()
 				).collect(Collectors.toList())
 		);
 	}
 
 	@Bean
 	public ToolCallbackProvider pythonToolCallbackProvider(
-			McpAsyncClient fileSystemMcpSyncClient
+			McpSyncClient fileSystemMcpSyncClient
 	) {
 		//第三方工具列表
-		List<ToolCallback> asyncCallbacks = McpToolUtils.getToolCallbacksFromAsyncClients(
+		List<ToolCallback> syncCallbacks = McpToolUtils.getToolCallbacksFromSyncClients(
 				fileSystemMcpSyncClient
 		);
 		return ToolCallbackProvider.from(
@@ -112,17 +113,17 @@ public class ToolsConfig {
 										new PythonService()
 								)
 								.build().getToolCallbacks()),
-						asyncCallbacks.stream()
+						syncCallbacks.stream()
 				).collect(Collectors.toList())
 		);
 	}
 
 	@Bean
 	public ToolCallbackProvider fileToolCallbackProvider(
-			McpAsyncClient fileSystemMcpSyncClient
+			McpSyncClient fileSystemMcpSyncClient
 	) {
 		//第三方工具列表
-		List<ToolCallback> asyncCallbacks = McpToolUtils.getToolCallbacksFromAsyncClients(
+		List<ToolCallback> syncCallbacks = McpToolUtils.getToolCallbacksFromSyncClients(
 				fileSystemMcpSyncClient
 		);
 		return ToolCallbackProvider.from(
@@ -134,7 +135,7 @@ public class ToolsConfig {
 										new DocLoaderService()
 								)
 								.build().getToolCallbacks()),
-						asyncCallbacks.stream()
+						syncCallbacks.stream()
 				).collect(Collectors.toList())
 		);
 	}

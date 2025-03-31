@@ -4,8 +4,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class ManusApplication {
+public class WanusApplication {
     public static void main(String[] args) {
-        SpringApplication.run(ManusApplication.class, args);
+        SpringApplication.run(WanusApplication.class, args);
     }
 }

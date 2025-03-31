@@ -3,11 +3,11 @@ server:
 
 spring:
   application:
-    name: manus4j
+    name: wanus
   ai:
     openai:
       base-url: https://dashscope.aliyuncs.com/compatible-mode
-      api-key: sk-eff76ff3338e4dcd955907790d49116a
+      api-key: sk-eff76ff3338e4dcd955907790d49116a  #用自己的key,这个key已经作废
       chat:
         options:
           model: qwen-max-latest

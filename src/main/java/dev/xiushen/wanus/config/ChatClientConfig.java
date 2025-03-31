@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-public class ClientConfig {
+public class ChatClientConfig {
 
     private static final String PLANNING_SYSTEM_PROMPT = "# Manus AI Assistant Capabilities\n" + "## Overview\n"
             + "I am an AI assistant designed to help users with a wide range of tasks using various tools and capabilities. This document provides a more detailed overview of what I can do while respecting proprietary information boundaries.\n\n"
